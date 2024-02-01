@@ -1,0 +1,106 @@
+on:
+    workflow_dispatch:
+      inputs:
+        overlapDeploy:
+          type: boolean
+          description: rolling deployment without deleting previous resources
+        azure-location:
+          type: choice
+          description: Azure Location
+          options: 
+            - australiaeast
+            - switzerlandnorth
+            - eastus
+            - eastus2
+
+permissions:
+    id-token: write
+    contents: read
+
+jobs:
+    build:
+      runs-on: ubuntu-latest
+      env:
+        AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+        AZURE_LOCATION: ${{ github.event.inputs.azure-location }}
+        AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRETID: ${{ secrets.SECRETID }}
+        AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        AZURE_FORMRECOGNIZER_RESOURCE_GROUP: ${{ secrets.AZURE_FORMRECOGNIZER_RESOURCE_GROUP }}
+        AZURE_FORMRECOGNIZER_SERVICE: ${{ secrets.AZURE_FORMRECOGNIZER_SERVICE }}
+        AZURE_KEY_VAULT_NAME: ${{ secrets.AZURE_KEY_VAULT_NAME }}
+        AZURE_OPENAI_CHATGPT_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_CHATGPT_DEPLOYMENT }}
+        AZURE_OPENAI_CHATGPT_MODEL: ${{ secrets.AZURE_OPENAI_CHATGPT_MODEL }}
+        AZURE_OPENAI_EMB_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_EMB_DEPLOYMENT }}
+        AZURE_OPENAI_EMB_MODEL_NAME: ${{ secrets.AZURE_OPENAI_EMB_MODEL_NAME }}
+        AZURE_OPENAI_GPT4V_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_GPT_DEPLOYMENT }}
+        AZURE_OPENAI_GPT4V_MODEL: ${{ secrets.AZURE_OPENAI_GPT4V_MODEL }}
+        AZURE_OPENAI_RESOURCE_GROUP: ${{ secrets.AZURE_OPENAI_RESOURCE_GROUP }}
+        AZURE_OPENAI_SERVICE: ${{ secrets.AZURE_OPENAI_SERVICE }}
+        AZURE_SEARCH_INDEX: ${{ secrets.AZURE_SEARCH_INDEX }}
+        AZURE_SEARCH_SERVICE: ${{ secrets.AZURE_SEARCH_SERVICE }}
+        AZURE_SEARCH_SERVICE_RESOURCE_GROUP: ${{ secrets.AZURE_SEARCH_SERVICE_RESOURCE_GROUP }}
+        AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        AZURE_STORAGE_CONTAINER: ${{ secrets.AZURE_STORAGE_CONTAINER }}
+        AZURE_STORAGE_RESOURCE_GROUP: ${{ secrets.AZURE_STORAGE_RESOURCE_GROUP }}
+        BACKEND_URI: ${{ vars.BACKEND_URI }}
+        USE_GPT4V: ${{ secrets.USE_GPT4V }}
+        VISION_SECRET_NAME: ${{ secrets.VISION_SECRET_NAME }}
+
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v3
+  
+        - name: Install azd
+          uses: Azure/setup-azd@v0.1.0
+
+        - name: Setting all the environment variables
+          run: |
+            azd env new "sri-rag-gptv-new"
+            azd env set AZURE_FORMRECOGNIZER_RESOURCE_GROUP "$AZURE_FORMRECOGNIZER_RESOURCE_GROUP"
+            azd env set AZURE_FORMRECOGNIZER_SERVICE "$AZURE_FORMRECOGNIZER_SERVICE"
+            azd env set AZURE_KEY_VAULT_NAME "$AZURE_KEY_VAULT_NAME"
+            azd env set AZURE_OPENAI_CHATGPT_DEPLOYMENT "$AZURE_OPENAI_CHATGPT_DEPLOYMENT"
+            azd env set AZURE_OPENAI_CHATGPT_MODEL "$AZURE_OPENAI_CHATGPT_MODEL"
+            azd env set AZURE_OPENAI_EMB_DEPLOYMENT "$AZURE_OPENAI_EMB_DEPLOYMENT"
+            azd env set AZURE_OPENAI_EMB_MODEL_NAME "$AZURE_OPENAI_EMB_MODEL_NAME"
+            azd env set AZURE_OPENAI_GPT4V_DEPLOYMENT "$AZURE_OPENAI_GPT4V_DEPLOYMENT"
+            azd env set AZURE_OPENAI_GPT4V_MODEL "$AZURE_OPENAI_GPT4V_MODEL"
+            azd env set AZURE_OPENAI_RESOURCE_GROUP "$AZURE_OPENAI_RESOURCE_GROUP"
+            azd env set AZURE_OPENAI_SERVICE "$AZURE_OPENAI_SERVICE"
+            azd env set AZURE_SEARCH_INDEX "$AZURE_SEARCH_INDEX"
+            azd env set AZURE_SEARCH_SERVICE "$AZURE_SEARCH_SERVICE"
+            azd env set AZURE_SEARCH_SERVICE_RESOURCE_GROUP "$AZURE_SEARCH_SERVICE_RESOURCE_GROUP"
+            azd env set AZURE_STORAGE_ACCOUNT "$AZURE_STORAGE_ACCOUNT"
+            azd env set AZURE_STORAGE_CONTAINER "$AZURE_STORAGE_CONTAINER"
+            azd env set AZURE_STORAGE_RESOURCE_GROUP "$AZURE_STORAGE_RESOURCE_GROUP"
+            azd env set BACKEND_URI "$BACKEND_URI"
+            azd env set USE_GPT4V true
+            azd env set VISION_SECRET_NAME "$VISION_SECRET_NAME"
+  
+        - name: Log in with Azure (Federated Credentials)
+          if: ${{ env.AZURE_CLIENT_ID != '' }}
+          run: |
+            azd auth login `
+              --client-id "$Env:AZURE_CLIENT_ID" `
+              --client-secret "$Env:AZURE_CLIENT_SECRETID" `
+              --tenant-id "$Env:AZURE_TENANT_ID"
+          shell: pwsh
+
+        - name: Cleanup
+          if: ${{ github.event.inputs.overlapDeploy == 'false' }}
+          run: azd down --purge --force  
+
+        - name: Sleep for one minute
+          if: ${{ github.event.inputs.overlapDeploy == 'false' }}
+          uses: GuillaumeFalourd/wait-sleep-action@v1
+          with:
+            time: '1m' # wait 1 minute for provision state update after deleting
+  
+        - name: Deploy Application
+          run: azd up --no-prompt
+          env:
+            AZURE_ENV_NAME: ${{ env.AZURE_ENV_NAME }}
+            AZURE_LOCATION: ${{ env.AZURE_LOCATION }}
+            AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
